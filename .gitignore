@@ -1,4 +1,4 @@
 env/
 swigwin-4.0.2/
-REINFORCE/.vs/
-REINFORCE/__pycache__/
+__pycache__/
+.vs/

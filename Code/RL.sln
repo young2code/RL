@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30621.155
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "REINFORCE", "REINFORCE.pyproj", "{0A36CCDE-1FF8-4FDA-94AA-372C6F453B9F}"
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "RL", "RL.pyproj", "{0A36CCDE-1FF8-4FDA-94AA-372C6F453B9F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

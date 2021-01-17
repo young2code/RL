@@ -3,14 +3,15 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>0a36ccde-1ff8-4fda-94aa-372c6f453b9f</ProjectGuid>
-    <ProjectHome>.</ProjectHome>
-    <StartupFile>REINFORCE.py</StartupFile>
+    <ProjectHome>
+    </ProjectHome>
+    <StartupFile>SARSA.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
-    <Name>REINFORCE</Name>
-    <RootNamespace>REINFORCE</RootNamespace>
+    <Name>RL</Name>
+    <RootNamespace>RL</RootNamespace>
     <InterpreterId>MSBuild|RL|$(MSBuildProjectFullPath)</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -22,7 +23,13 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="SARSA.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="REINFORCE.py" />
+    <Compile Include="SARSA_book.py">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="..\env\RL\">

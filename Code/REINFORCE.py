@@ -16,7 +16,7 @@ class Pi(nn.Module):
             nn.Linear(in_dim, 64),
             nn.ReLU(),
             nn.Linear(64, out_dim),
-            ]
+        ]
 
         self.model = nn.Sequential(*layers)
         self.onpolicy_reset()
@@ -50,13 +50,17 @@ def train(pi, optimizer):
         future_ret = pi.rewards[t] + gamma * future_ret
         rets[t] = future_ret
 
+    # Compute loss (which is really opposite of rewards)
     rets = torch.tensor(rets)
     log_probs = torch.stack(pi.log_probs)
-    loss = - log_probs * rets # gradient term: Negative for maximizing
+    loss = - log_probs * rets # gradient term: Negative for maximizing reward
     loss = torch.sum(loss)
+
+    # Backpropagation
     optimizer.zero_grad()
-    loss.backward() # backpropagate, compute gradient
+    loss.backward() # backpropagate, compute gradients that will be stored by the tensors (parameters)
     optimizer.step() # gradient-ascent, update the weights
+
     return loss
 
 def main():
