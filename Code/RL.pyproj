@@ -27,9 +27,6 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="REINFORCE.py" />
-    <Compile Include="SARSA_book.py">
-      <SubType>Code</SubType>
-    </Compile>
   </ItemGroup>
   <ItemGroup>
     <Interpreter Include="..\env\RL\">

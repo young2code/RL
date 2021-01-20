@@ -7,6 +7,7 @@ import torch.optim as optim
 from torch import distributions
 
 '''
+Chapter 3. SARSA
 Most code here is copied from SLM-Lab first and then modified to show a plain torch implementation.
 '''
 
@@ -57,10 +58,11 @@ class SARSA(nn.Module):
         self.memory = {k: [] for k in self.data_keys}
 
         # Epsilon greedy policy
-        self.epsilon_start = 0.05 #1.0
+        self.epsilon_start = 1.0
         self.epsilon_end = 0.05
         self.epsilon_max_steps = 10000
         self.epsilon = self.epsilon_start
+        self.current_step = 0
 
         # etc.
         self.to_train = 0
@@ -170,7 +172,15 @@ class SARSA(nn.Module):
             self.to_train = 1
 
     def update_epsilon(self):
-        pass
+        # Simple linear decay
+        self.current_step += 1
+
+        if self.epsilon_max_steps <= self.current_step:
+            self.epsilon = self.epsilon_end
+            return
+
+        slope = (self.epsilon_end - self.epsilon_start) / (self.epsilon_max_steps - self.current_step)
+        self.epsilon = max(slope*self.current_step + self.epsilon_start, self.epsilon_end)
 
     def update(self, state, action, reward, next_state, done):
         self.update_memory(state, action, reward, next_state, done)
