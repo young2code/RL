@@ -23,6 +23,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="DQN.py" />
     <Compile Include="SARSA.py">
       <SubType>Code</SubType>
     </Compile>
