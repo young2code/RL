@@ -56,9 +56,12 @@ class DQN(nn.Module):
 
         # Memory for batch
         self.data_keys = ['states', 'actions', 'rewards', 'next_states', 'dones']
-        self.memory = {k: [] for k in self.data_keys}
-        self.memory_max_size = 10000
         self.memory_batch_size = 32
+        self.memory_max_size = 10000
+        self.memory_cur_size = 0
+        self.memory_seen_size = 0
+        self.memory_head = -1
+        self.memory = {k: [None] * self.memory_max_size for k in self.data_keys}
 
         # Need to use boltzmann instead
         # Epsilon greedy policy
@@ -69,7 +72,7 @@ class DQN(nn.Module):
         self.current_step = 0
 
         # Learning rate decay to zero
-        self.learning_rate_max_steps = 10000
+        self.learning_rate_max_steps = 30000
 
         # Training
         self.to_train = 0
@@ -101,13 +104,14 @@ class DQN(nn.Module):
         return action_pd.sample()
 
     def sample(self):
-        # Create batch
-        batch = {k: self.memory[k] for k in self.data_keys}
+        # Batch indices a sampled random uniformly among experiences in memory.
+        batch_idxs = np.random.randint(self.memory_cur_size, size=self.memory_batch_size)
 
-        # 'next_actions' is copied from 'actions' from index 1 and its last element will be always 0.
-        # This is safe for next_action at done since the calculated act_next_q_preds will be multiplied by (1 - batch['dones'])
-        batch['next_actions'] = np.zeros_like(batch['actions'])
-        batch['next_actions'][:-1] = batch['actions'][1:]
+        # Create batch.
+        batch = {k: [] for k in self.data_keys}
+        for index in batch_idxs:
+            for k in self.data_keys:
+                batch[k].append(self.memory[k][index])
 
         for k in batch:
             batch[k] = np.array(batch[k])
@@ -148,7 +152,8 @@ class DQN(nn.Module):
 
         max_next_q_preds, _ = next_q_preds.max(dim=-1, keepdim=False)
         act_q_targets = batch['rewards'] + self.gamma * (1 - batch['dones']) * max_next_q_preds
-        print(f'act_q_preds: {act_q_preds}\nmax_next_q_preds: {max_next_q_preds}')
+
+        #print(f'act_q_preds: {act_q_preds}\nmax_next_q_preds: {max_next_q_preds}')
 
         # Let's use mean-squared-error loss function.
         loss = nn.MSELoss()
@@ -158,30 +163,43 @@ class DQN(nn.Module):
     def check_train(self):
         if self.to_train == 1:
 
-            # Computer loss for the batch.
-            batch = self.sample()
-            loss = self.calc_q_loss(batch)
+            for _ in range(self.training_iter):
+                batch = self.sample()
 
-            # Computer gradients with backpropagation.
-            self.optim.zero_grad()
-            loss.backward()
+                for _ in range(self.training_batch_iter):
+                    # Computer loss for the batch.
+                    loss = self.calc_q_loss(batch)
 
-            # Update NN parameters.
-            self.optim.step()
+                    # Computer gradients with backpropagation.
+                    self.optim.zero_grad()
+                    loss.backward()
+
+                    # Update NN parameters.
+                    self.optim.step()
 
             # Reset
             self.to_train = 0
-            self.memory = {k: [] for k in self.data_keys}
+
 
     def update_memory(self, state, action, reward, next_state, done):
-        # Add this exp to memory.
-        most_recent = (state, action, reward, next_state, done)
-        for idx, k in enumerate(self.data_keys):
-            self.memory[k].append(most_recent[idx])
+        """
+        Add this exp to memory. Since DQN is off-policy algorithm, we can reuse
+        any experiences generated during training regardless of which policy (NN)
+        is used. We will discard the oldest exp if there is no space to add new one.
+        """
 
-        # If it has collected the desired number of experiences, it is ready to train.
-        if len(self.memory['states']) == self.training_frequency:
-            self.to_train = 1
+        most_recent = (state, action, reward, next_state, done)
+        self.memory_head = (self.memory_head + 1) % self.memory_max_size
+
+        for idx, k in enumerate(self.data_keys):
+            self.memory[k][self.memory_head] = most_recent[idx]
+
+        if self.memory_cur_size < self.memory_max_size:
+            self.memory_cur_size += 1
+
+        self.memory_seen_size += 1
+
+        self.to_train = self.memory_seen_size > self.training_start_step and self.memory_head % self.training_frequency == 0;
 
     def update_epsilon(self):
         # Simple linear decay
@@ -206,7 +224,7 @@ def run_rl(dqn, env, max_frame):
     total_reward = 0
     while True:
         if done:  # before starting another episode
-            print(f'Episode done: total reward={total_reward}')
+            print(f'Episode done: cur_frame={cur_frame} total_reward={total_reward}')
             total_reward = 0
 
             if cur_frame < max_frame:  # reset and continue
@@ -228,7 +246,7 @@ def main():
     env = gym.make("CartPole-v0")
     dqn = DQN(env)
 
-    run_rl(dqn, env, max_frame=100000)
+    run_rl(dqn, env, max_frame=30000)
 
 if __name__ == '__main__':
     main()

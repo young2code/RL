@@ -128,7 +128,7 @@ class SARSA(nn.Module):
         act_next_q_preds = next_q_preds.gather(-1, batch['next_actions'].long().unsqueeze(-1)).squeeze(-1)
         act_q_targets = batch['rewards'] + self.gamma * (1 - batch['dones']) * act_next_q_preds
 
-        print(f'act_q_preds: {act_q_preds}\nact_q_targets: {act_q_targets}')
+        #print(f'act_q_preds: {act_q_preds}\nact_q_targets: {act_q_targets}')
 
         """
         You can now easily understand that SARSA is on-policy RL algorithm that cannot reuse
@@ -194,7 +194,7 @@ def run_rl(sarsa, env, max_frame):
     total_reward = 0
     while True:
         if done:  # before starting another episode
-            print(f'Episode done: total reward={total_reward}')
+            print(f'Episode done: cur_frame={cur_frame} total_reward={total_reward}')
             total_reward = 0
 
             if cur_frame < max_frame:  # reset and continue
