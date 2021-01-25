@@ -173,8 +173,6 @@ class SARSA(nn.Module):
 
     def update_epsilon(self):
         # Simple linear decay
-        self.current_step += 1
-
         if self.epsilon_max_steps <= self.current_step:
             self.epsilon = self.epsilon_end
             return
@@ -183,6 +181,7 @@ class SARSA(nn.Module):
         self.epsilon = max(slope*self.current_step + self.epsilon_start, self.epsilon_end)
 
     def update(self, state, action, reward, next_state, done):
+        self.current_step += 1
         self.update_memory(state, action, reward, next_state, done)
         self.check_train()
         self.update_epsilon()

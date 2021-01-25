@@ -48,9 +48,12 @@ class DQN(nn.Module):
         self.model = nn.Sequential(*layers)
         self.train()
 
-        # Optimizer - Adam
-        self.optim = torch.optim.Adam(self.model.parameters(), lr=0.01)
-
+        # Optimizer - Adam with learning rate linear decay.
+        self.learning_rate = 0.01
+        self.learning_rate_max_steps = 10000
+        self.optim = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self.optim, 
+                                                              lr_lambda=lambda x: 1 - x/self.learning_rate_max_steps if x < self.learning_rate_max_steps else 1/self.learning_rate_max_steps)
         # Gamma
         self.gamma = 0.99
 
@@ -69,17 +72,18 @@ class DQN(nn.Module):
         self.epsilon_end = 0.05
         self.epsilon_max_steps = 10000
         self.epsilon = self.epsilon_start
-        self.current_step = 0
 
-        # Learning rate decay to zero
-        self.learning_rate_max_steps = 30000
-
-        # Training
+        # Training with Replay Experiences
         self.to_train = 0
         self.training_batch_iter = 8
         self.training_iter = 4
         self.training_frequency = 4
         self.training_start_step = 32
+        self.current_training_step = 0
+
+        # Frame
+        self.current_frame = 0
+        self.max_frame = 10000
 
     def act(self, state):
         state = torch.from_numpy(state.astype(np.float32))
@@ -177,6 +181,8 @@ class DQN(nn.Module):
                     # Update NN parameters.
                     self.optim.step()
 
+                    self.current_training_step += 1
+
             # Reset
             self.to_train = 0
 
@@ -203,38 +209,36 @@ class DQN(nn.Module):
 
     def update_epsilon(self):
         # Simple linear decay
-        self.current_step += 1
-
-        if self.epsilon_max_steps <= self.current_step:
+        if self.epsilon_max_steps <= self.current_frame:
             self.epsilon = self.epsilon_end
             return
 
-        slope = (self.epsilon_end - self.epsilon_start) / (self.epsilon_max_steps - self.current_step)
-        self.epsilon = max(slope*self.current_step + self.epsilon_start, self.epsilon_end)
+        slope = (self.epsilon_end - self.epsilon_start) / (self.epsilon_max_steps - self.current_frame)
+        self.epsilon = max(slope*self.current_frame + self.epsilon_start, self.epsilon_end)
 
     def update(self, state, action, reward, next_state, done):
+        self.current_frame += 1
         self.update_memory(state, action, reward, next_state, done)
         self.check_train()
         self.update_epsilon()
+        if (self.memory_seen_size > self.training_start_step):
+            self.lr_scheduler.step()
 
-def run_rl(dqn, env, max_frame):
+def run_rl(dqn, env):
     state = env.reset()
     done = False
-    cur_frame = 0;
     total_reward = 0
     while True:
         if done:  # before starting another episode
-            print(f'Episode done: cur_frame={cur_frame} total_reward={total_reward}')
+            print(f'Episode done: cur_frame={dqn.current_frame} current_training_step={dqn.current_training_step} total_reward={total_reward}')
             total_reward = 0
 
-            if cur_frame < max_frame:  # reset and continue
+            if dqn.current_frame < dqn.max_frame:  # reset and continue
                 state = env.reset()
                 done = False
 
-        if cur_frame >= max_frame:  # finish
+        if dqn.current_frame >= dqn.max_frame:  # finish
             break
-
-        cur_frame += 1
 
         action = dqn.act(state)
         next_state, reward, done, info = env.step(action)
@@ -245,11 +249,7 @@ def run_rl(dqn, env, max_frame):
 def main():
     env = gym.make("CartPole-v0")
     dqn = DQN(env)
-
-    run_rl(dqn, env, max_frame=30000)
+    run_rl(dqn, env)
 
 if __name__ == '__main__':
     main()
-
-   
-
