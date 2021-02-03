@@ -11,24 +11,6 @@ Chapter 4. DQN
 Most code here is copied from SLM-Lab first and then modified to show a plain torch implementation.
 '''
 
-# This is a modified Categorical distribution class to implement greedy policy.
-class Argmax(distributions.Categorical):
-    '''
-    Special distribution class for argmax sampling, where probability is always 1 for the argmax.
-    NOTE although argmax is not a sampling distribution, this implementation is for API consistency.
-    '''
-    def __init__(self, probs=None, logits=None, validate_args=None):
-        if probs is not None:
-            new_probs = torch.zeros_like(probs, dtype=torch.float)
-            new_probs[probs == probs.max(dim=-1, keepdim=True)[0]] = 1.0
-            probs = new_probs
-        elif logits is not None:
-            new_logits = torch.full_like(logits, -1e8, dtype=torch.float)
-            new_logits[logits == logits.max(dim=-1, keepdim=True)[0]] = 1.0
-            logits = new_logits
-
-        super().__init__(probs=probs, logits=logits, validate_args=validate_args)
-
 class DQN(nn.Module):
     def __init__(self, env):
         super(DQN, self).__init__()
@@ -66,12 +48,11 @@ class DQN(nn.Module):
         self.memory_head = -1
         self.memory = {k: [None] * self.memory_max_size for k in self.data_keys}
 
-        # Need to use boltzmann instead
-        # Epsilon greedy policy
-        self.epsilon_start = 1.0
-        self.epsilon_end = 0.05
-        self.epsilon_max_steps = 10000
-        self.epsilon = self.epsilon_start
+        # Boltzmann policy
+        self.boltzmann_tau_start = 5.0
+        self.boltzmann_tau_end = 0.5
+        self.boltzmann_tau_max_steps = 10000
+        self.boltzmann_tau = self.boltzmann_tau_start
 
         # Training with Replay Experiences
         self.to_train = 0
@@ -87,24 +68,17 @@ class DQN(nn.Module):
 
     def act(self, state):
         state = torch.from_numpy(state.astype(np.float32))
-
-        action = None
-
-        # Epsilon greedy to balance between exploring and exploiting.
-        if self.epsilon > np.random.rand():
-            action = self.random_policy()
-        else:
-            action = self.greedy_policy(state)
-
+        action = self.boltzmann_policy(state)
         return action.item()
 
-    def random_policy(self):
-        action = [self.env.action_space.sample()]
-        return torch.tensor(action)
-
-    def greedy_policy(self, state):
+    def boltzmann_policy(self, state):
+        '''
+        Boltzmann policy: adjust pdparam with temperature tau; 
+        the higher the more randomness/noise in action.
+        '''
         pdparam = self.model(state)
-        action_pd = Argmax(logits=pdparam)  
+        pdparam /= self.boltzmann_tau
+        action_pd = distributions.Categorical(logits=pdparam)
         return action_pd.sample()
 
     def sample(self):
@@ -207,20 +181,20 @@ class DQN(nn.Module):
 
         self.to_train = self.memory_seen_size > self.training_start_step and self.memory_head % self.training_frequency == 0;
 
-    def update_epsilon(self):
+    def update_tau(self):
         # Simple linear decay
-        if self.epsilon_max_steps <= self.current_frame:
-            self.epsilon = self.epsilon_end
+        if self.boltzmann_tau_max_steps <= self.current_frame:
+            self.boltzmann_tau = self.boltzmann_tau_end
             return
 
-        slope = (self.epsilon_end - self.epsilon_start) / (self.epsilon_max_steps - self.current_frame)
-        self.epsilon = max(slope*self.current_frame + self.epsilon_start, self.epsilon_end)
+        slope = (self.boltzmann_tau_end - self.boltzmann_tau_start) / (self.boltzmann_tau_max_steps - self.current_frame)
+        self.boltzmann_tau = max(slope*self.current_frame + self.boltzmann_tau_start, self.boltzmann_tau_end)
 
     def update(self, state, action, reward, next_state, done):
         self.current_frame += 1
         self.update_memory(state, action, reward, next_state, done)
         self.check_train()
-        self.update_epsilon()
+        self.update_tau()
         if (self.memory_seen_size > self.training_start_step):
             self.lr_scheduler.step()
 
