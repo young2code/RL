@@ -145,10 +145,10 @@ class DQN(nn.Module):
                 batch = self.sample()
 
                 for _ in range(self.training_batch_iter):
-                    # Computer loss for the batch.
+                    # Compute loss for the batch.
                     loss = self.calc_q_loss(batch)
 
-                    # Computer gradients with backpropagation.
+                    # Compute gradients with backpropagation.
                     self.optim.zero_grad()
                     loss.backward()
 

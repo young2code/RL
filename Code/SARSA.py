@@ -146,11 +146,11 @@ class SARSA(nn.Module):
     def check_train(self):
         if self.to_train == 1:
 
-            # Computer loss for the batch.
+            # Compute loss for the batch.
             batch = self.sample()
             loss = self.calc_q_loss(batch)
 
-            # Computer gradients with backpropagation.
+            # Compute gradients with backpropagation.
             self.optim.zero_grad()
             loss.backward()
 

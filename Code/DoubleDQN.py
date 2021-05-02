@@ -7,8 +7,10 @@ import torch.optim as optim
 from torch import distributions
 
 '''
-Chapter 4. Improving DQN
+Chapter 5. Improving DQN
 Most code here is copied from SLM-Lab first and then modified to show a plain torch implementation.
+
+This is for using two different networs to solve the original DQN's issues: overestimation of Q and moving target.
 '''
 
 class DoubleDQN(nn.Module):
@@ -156,10 +158,10 @@ class DoubleDQN(nn.Module):
                 batch = self.sample()
 
                 for _ in range(self.training_batch_iter):
-                    # Computer loss for the batch.
+                    # Compute loss for the batch.
                     loss = self.calc_q_loss(batch)
 
-                    # Computer gradients with backpropagation.
+                    # Compute gradients with backpropagation.
                     self.optim.zero_grad()
                     loss.backward()
 
