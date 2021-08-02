@@ -12,7 +12,7 @@
     <OutputPath>.</OutputPath>
     <Name>RL</Name>
     <RootNamespace>RL</RootNamespace>
-    <InterpreterId>MSBuild|RL|$(MSBuildProjectFullPath)</InterpreterId>
+    <InterpreterId>MSBuild|env|$(MSBuildProjectFullPath)</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -32,10 +32,10 @@
     <Compile Include="REINFORCE.py" />
   </ItemGroup>
   <ItemGroup>
-    <Interpreter Include="..\env\RL\">
-      <Id>RL</Id>
+    <Interpreter Include="..\env\">
+      <Id>env</Id>
       <Version>3.7</Version>
-      <Description>RL (Python 3.7 (64-bit))</Description>
+      <Description>env (Python 3.7 (64-bit))</Description>
       <InterpreterPath>Scripts\python.exe</InterpreterPath>
       <WindowsInterpreterPath>Scripts\pythonw.exe</WindowsInterpreterPath>
       <PathEnvironmentVariable>PYTHONPATH</PathEnvironmentVariable>
