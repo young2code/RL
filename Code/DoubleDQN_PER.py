@@ -174,7 +174,7 @@ class DoubleDQN_PER(nn.Module):
     def sample_idxs(self):
         '''Samples batch_size indices from memory in proportional to their priority.'''
         batch_idxs = np.zeros(self.memory_batch_size)
-        tree_idxs = np.zeros(self.memory_batch_size, dtype=np.int)
+        tree_idxs = np.zeros(self.memory_batch_size, dtype=int)
 
         for i in range(self.memory_batch_size):
             s = random.uniform(0, self.tree.total())
