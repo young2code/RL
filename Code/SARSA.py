@@ -189,7 +189,7 @@ class SARSA(nn.Module):
 def run_rl(sarsa, env, max_frame):
     state = env.reset()
     done = False
-    cur_frame = 0;
+    cur_frame = 0
     total_reward = 0
     while True:
         if done:  # before starting another episode

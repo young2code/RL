@@ -5,7 +5,7 @@
     <ProjectGuid>0a36ccde-1ff8-4fda-94aa-372c6f453b9f</ProjectGuid>
     <ProjectHome>
     </ProjectHome>
-    <StartupFile>DoubleDQN_PER.py</StartupFile>
+    <StartupFile>A2C_NStepReturns.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -23,6 +23,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="A2C_NStepReturns.py" />
     <Compile Include="DoubleDQN.py" />
     <Compile Include="DoubleDQN_PER.py" />
     <Compile Include="DQN.py" />
