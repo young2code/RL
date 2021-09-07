@@ -12,8 +12,8 @@ import random
 Chapter 6. Advantage Actor-Critic (A2C)
 Most code here is copied from SLM-Lab first and then modified to show a plain torch implementation.
 
-This exmaple will create two seperate networks for actor and critic. For advantage estimation,
-it will use N-step returns method.
+This exmaple will create one shared network for actor and critic. For advantage estimation,
+it will use GAE (Generalized Advantage Estimation) method.
 '''
 
 class A2C(nn.Module):
@@ -24,29 +24,37 @@ class A2C(nn.Module):
         in_dim = env.observation_space.shape[0] # 4 for CartPole
         out_dim = env.action_space.n # 2 for CardPole
 
-        # Initialize the neural networks for Actor and Critic
-        # We do not share NN between actor and critic for this example.
+        # Initialize the neural networks between Actor and Critic.
+        # We will use a shared NN between actor and critic for this example.
+
+        # Shared NN
+        shared_layres = [
+            nn.Linear(in_dim, 64),
+            nn.ReLU(),
+        ]
+        self.shared_model = nn.Sequential(*shared_layres)
 
         # Actor
         actor_layers = [
-            nn.Linear(in_dim, 64),
-            nn.SELU(),
             nn.Linear(64, out_dim),
         ]
         self.actor_model = nn.Sequential(*actor_layers)
-        self.actor_optim = torch.optim.RMSprop(self.actor_model.parameters(), lr=0.01)
         self.actor_policy_loss_coef = 1.0
         self.actor_entropy_coef = 0.001
 
         # Critic
         critic_layers = [
-            nn.Linear(in_dim, 64),
-            nn.SELU(),
             nn.Linear(64, 1),
         ]
         self.critic_model = nn.Sequential(*critic_layers)
-        self.critic_optim = torch.optim.RMSprop(self.critic_model.parameters(), lr=0.01)
-        self.critic_val_loss_coef = 1.0
+        self.critic_val_loss_coef = 0.5
+
+        # Optimizer for all three models
+        params = []
+        params += self.shared_model.parameters()
+        params += self.actor_model.parameters()
+        params += self.critic_model.parameters()
+        self.optim = torch.optim.RMSprop(params, lr=0.01)
 
         self.train()
 
@@ -56,6 +64,9 @@ class A2C(nn.Module):
         # Memory for batch
         self.data_keys = ['states', 'actions', 'rewards', 'next_states', 'dones']
         self.memory = {k: [] for k in self.data_keys}
+
+        # GAE
+        self.gae_lambda = 0.95
 
         # Training
         self.to_train = 0
@@ -70,7 +81,8 @@ class A2C(nn.Module):
         - Softmax - https://miro.medium.com/max/875/1*ReYpdIZ3ZSAPb2W8cJpkBg.jpeg
         - Categorical() also provides log(action_probability) that we need for calculating loss.
         """
-        x = torch.from_numpy(state.astype(np.float32)) # to tensor        
+        x = torch.from_numpy(state.astype(np.float32)) # to tensor
+        x = self.shared_model(x)
         pdparam = self.actor_model(x) # forward pass
 
         pd = Categorical(logits=pdparam) # probability distribution
@@ -97,41 +109,47 @@ class A2C(nn.Module):
         if len(self.memory['states']) == self.training_frequency:
             self.to_train = 1
 
-    def calc_v(self, x):
+    def calc_v(self, states):
         '''
         Forward-pass to calculate the predicted state-value from critic_net.
         '''
+        x = self.shared_model(states)
         return self.critic_model(x).view(-1)
 
     def calc_pdparam_v(self, batch):
         '''Efficiently forward to get pdparam and v by batch for loss computation'''
         states = batch['states']
-        pdparam = self.actor_model(states)
+
+        x = self.shared_model(states)
+        pdparam = self.actor_model(x)
+
         v_pred = self.calc_v(states)
         return pdparam, v_pred
 
-    def calc_nstep_returns(self, batch, next_v_pred):
+    def calc_gaes(self, rewards, dones, v_preds):
         '''
-        Estimate the advantages using n-step returns. Ref: http://www-anw.cs.umass.edu/~barto/courses/cs687/Chapter%207.pdf
-        Also see Algorithm S3 from A3C paper https://arxiv.org/pdf/1602.01783.pdf for the calculation used below
-        R^(n)_t = r_{t} + gamma r_{t+1} + ... + gamma^(n-1) r_{t+n-1} + gamma^(n) V(s_{t+n})
-        This is how we estimate q value (s,a) with rewards and v value (s).
+        Estimate the advantages using GAE from Schulman et al. https://arxiv.org/pdf/1506.02438.pdf
+        v_preds are values predicted for current states, with one last element as the final next_state
+        delta is defined as r + gamma * V(s') - V(s) in eqn 10
+        GAE is defined in eqn 16
+        This method computes in torch tensor to prevent unnecessary moves between devices (e.g. GPU tensor to CPU numpy)
+        NOTE any standardization is done outside of this method
         '''
-        rewards = batch['rewards']
-        dones = batch['dones']
-        rets = torch.zeros_like(rewards)
-        future_ret = next_v_pred
-        not_dones = 1 - dones
+        T = len(rewards)
+        assert T + 1 == len(v_preds), f'T+1: {T+1} v.s. v_preds.shape: {v_preds.shape}'  # v_preds runs into t+1
+        gaes = torch.zeros_like(rewards)
+        future_gae = torch.tensor(0.0, dtype=rewards.dtype)
+        not_dones = 1 - dones  # to reset at episode boundary by multiplying 0
+        deltas = rewards + self.gamma * v_preds[1:] * not_dones - v_preds[:-1]
+        coef = self.gamma * self.gae_lambda
+        for t in reversed(range(T)):
+            gaes[t] = future_gae = deltas[t] + coef * not_dones[t] * future_gae
+        return gaes
 
-        for t in reversed(range(self.num_step_returns)):
-            rets[t] = future_ret = rewards[t] + self.gamma * future_ret * not_dones[t]
-
-        return rets
-
-    def calc_nstep_advs_v_targets(self, batch, v_preds):
+    def calc_gae_advs_v_targets(self, batch, v_preds):
         '''
-        Calculate N-step returns, and advs = nstep_rets - v_preds, v_targets = nstep_rets
-        See n-step advantage under http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_5_actor_critic_pdf.pdf
+        Calculate GAE, and advs = GAE, v_targets = advs + v_preds
+        See GAE from Schulman et al. https://arxiv.org/pdf/1506.02438.pdf
         '''
         next_states = batch['next_states'][-1]
         next_states = next_states.unsqueeze(dim=0)
@@ -140,13 +158,14 @@ class A2C(nn.Module):
             next_v_pred = self.calc_v(next_states)
 
         v_preds = v_preds.detach()  # adv does not accumulate grad
-        nstep_rets = self.calc_nstep_returns(batch, next_v_pred)
-        advs = nstep_rets - v_preds
-        v_targets = nstep_rets
+        v_preds_all = torch.cat((v_preds, next_v_pred), dim=0)
+        advs = self.calc_gaes(batch['rewards'], batch['dones'], v_preds_all)
+        v_targets = advs + v_preds            
+        advs = (advs - advs.mean()) / (advs.std() + 1e-08)  # standardize only for advs, not v_targets
 
         #print(f'advs: {advs}\nv_targets: {v_targets}')
-
         return advs, v_targets
+
 
     def calc_policy_loss(self, batch, pdparams, advs):
         '''Calculate the actor's policy loss'''        
@@ -176,24 +195,19 @@ class A2C(nn.Module):
         if self.to_train == 1:
             batch = self.sample()
             pdparams, v_preds = self.calc_pdparam_v(batch)
-            advs, v_targets = self.calc_nstep_advs_v_targets(batch, v_preds)
+            advs, v_targets = self.calc_gae_advs_v_targets(batch, v_preds)
             policy_loss = self.calc_policy_loss(batch, pdparams, advs)  # from actor
             val_loss = self.calc_val_loss(v_preds, v_targets)  # from critic
 
-            # actor update
-            self.actor_optim.zero_grad()
-            policy_loss.backward()
-            self.actor_optim.step()
+            loss = policy_loss + val_loss
 
-            # critic update
-            self.critic_optim.zero_grad()
-            val_loss.backward()
-            self.critic_optim.step()
+            self.optim.zero_grad()
+            loss.backward()
+            self.optim.step()
 
             # Reset- A2C is an on-policy algorithm so we cannot reuse data for next training.
             self.to_train = 0
-            self.memory = {k: [] for k in self.data_keys}
-            
+            self.memory = {k: [] for k in self.data_keys}            
 
     def update(self, state, action, reward, next_state, done):
         self.update_memory(state, action, reward, next_state, done)
