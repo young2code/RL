@@ -60,7 +60,7 @@ class A2C(nn.Module):
         # Training
         self.to_train = 0
         self.num_step_returns = 32
-        self.training_frequency = self.num_step_returns        
+        self.training_frequency = self.num_step_returns
 
     def act(self, state):      
         """

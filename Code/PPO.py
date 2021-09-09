@@ -1,4 +1,5 @@
 
+from copy import deepcopy
 from torch.distributions import Categorical
 import gym
 import numpy as np
@@ -9,52 +10,46 @@ from torch import distributions
 import random
 
 '''
-Chapter 6. Advantage Actor-Critic (A2C)
+Chapter 7. Proximal Policy Optimization (PPO)
 Most code here is copied from SLM-Lab first and then modified to show a plain torch implementation.
 
-This exmaple will create one shared network for actor and critic. For advantage estimation,
-it will use GAE (Generalized Advantage Estimation) method.
+For this example, we are implementing PPO with clipped surrogate objective with two seperate networks for actor and critic.
 '''
 
-class A2C(nn.Module):
+class PPO(nn.Module):
     def __init__(self, env):
-        super(A2C, self).__init__()
+        super(PPO, self).__init__()
 
         self.env = env
         in_dim = env.observation_space.shape[0] # 4 for CartPole
         out_dim = env.action_space.n # 2 for CardPole
 
-        # Initialize the neural networks between Actor and Critic.
-        # We will use a shared NN between actor and critic for this example.
-
-        # Shared NN
-        shared_layres = [
-            nn.Linear(in_dim, 64),
-            nn.ReLU(),
-        ]
-        self.shared_model = nn.Sequential(*shared_layres)
+        # Initialize the neural networks for Actor and Critic
+        # We do not share NN between actor and critic for this example.
 
         # Actor
         actor_layers = [
+            nn.Linear(in_dim, 64),
+            nn.ReLU(),
             nn.Linear(64, out_dim),
         ]
         self.actor_model = nn.Sequential(*actor_layers)
+        self.actor_optim = torch.optim.Adam(self.actor_model.parameters(), lr=0.01)
         self.actor_policy_loss_coef = 1.0
         self.actor_entropy_coef = 0.001
 
         # Critic
         critic_layers = [
+            nn.Linear(in_dim, 64),
+            nn.ReLU(),
             nn.Linear(64, 1),
         ]
         self.critic_model = nn.Sequential(*critic_layers)
-        self.critic_val_loss_coef = 0.5
+        self.critic_optim = torch.optim.Adam(self.critic_model.parameters(), lr=0.01)
+        self.critic_val_loss_coef = 1.0
 
-        # Optimizer for all three models
-        params = []
-        params += self.shared_model.parameters()
-        params += self.actor_model.parameters()
-        params += self.critic_model.parameters()
-        self.optim = torch.optim.RMSprop(params, lr=0.01)
+        # Create old net to calculate ratio
+        self.old_actor_model = deepcopy(self.actor_model)
 
         self.train()
 
@@ -65,12 +60,14 @@ class A2C(nn.Module):
         self.data_keys = ['states', 'actions', 'rewards', 'next_states', 'dones']
         self.memory = {k: [] for k in self.data_keys}
 
-        # GAE
+        # PPO uses GAE
         self.gae_lambda = 0.95
+        self.clip_eps = 0.2
 
         # Training
         self.to_train = 0
-        self.training_frequency = 32       
+        self.training_frequency = 32
+        self.training_epoch = 4
 
     def act(self, state):      
         """
@@ -80,8 +77,7 @@ class A2C(nn.Module):
         - Softmax - https://miro.medium.com/max/875/1*ReYpdIZ3ZSAPb2W8cJpkBg.jpeg
         - Categorical() also provides log(action_probability) that we need for calculating loss.
         """
-        x = torch.from_numpy(state.astype(np.float32)) # to tensor
-        x = self.shared_model(x)
+        x = torch.from_numpy(state.astype(np.float32)) # to tensor        
         pdparam = self.actor_model(x) # forward pass
 
         pd = Categorical(logits=pdparam) # probability distribution
@@ -108,22 +104,19 @@ class A2C(nn.Module):
         if len(self.memory['states']) == self.training_frequency:
             self.to_train = 1
 
-    def calc_v(self, states):
+    def calc_v(self, x):
         '''
         Forward-pass to calculate the predicted state-value from critic_net.
         '''
-        x = self.shared_model(states)
         return self.critic_model(x).view(-1)
 
     def calc_pdparam_v(self, batch):
         '''Efficiently forward to get pdparam and v by batch for loss computation'''
         states = batch['states']
-
-        x = self.shared_model(states)
-        pdparam = self.actor_model(x)
-
+        pdparam = self.actor_model(states)
         v_pred = self.calc_v(states)
         return pdparam, v_pred
+
 
     def calc_gaes(self, rewards, dones, v_preds):
         '''
@@ -165,7 +158,6 @@ class A2C(nn.Module):
         #print(f'advs: {advs}\nv_targets: {v_targets}')
         return advs, v_targets
 
-
     def calc_policy_loss(self, batch, pdparams, advs):
         '''Calculate the actor's policy loss'''        
         action_pd = Categorical(logits=pdparams) # probability distribution
@@ -180,6 +172,51 @@ class A2C(nn.Module):
         #print(f'Actor policy loss: {policy_loss:g}')
         return policy_loss
 
+    def calc_policy_loss(self, batch, pdparams, advs):
+        '''
+        The PPO loss function (subscript t is omitted)
+        L^{CLIP+VF+S} = E[ L^CLIP - c1 * L^VF + c2 * H[pi](s) ]
+
+        Breakdown piecewise,
+        1. L^CLIP = E[ min(ratio * A, clip(ratio, 1-eps, 1+eps) * A) ]
+        where ratio = pi(a|s) / pi_old(a|s)
+
+        2. L^VF = E[ mse(V(s_t), V^target) ]
+
+        3. H = E[ entropy ]
+        '''
+
+        action_pd = Categorical(logits=pdparams) # probability distribution
+        states = batch['states']
+        actions = batch['actions']
+
+        # L^CLIP
+        log_probs = action_pd.log_prob(actions)
+        with torch.no_grad():
+            old_pdparams = self.old_actor_model(states)
+            old_action_pd = Categorical(logits=old_pdparams) # probability distribution
+            old_log_probs = old_action_pd.log_prob(actions)
+        assert log_probs.shape == old_log_probs.shape
+        ratios = torch.exp(log_probs - old_log_probs)
+        #print(f'ratios: {ratios}')
+        sur_1 = ratios * advs
+        sur_2 = torch.clamp(ratios, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * advs
+        # flip sign because need to maximize
+        clip_loss = -torch.min(sur_1, sur_2).mean()
+        #print(f'clip_loss: {clip_loss}')
+
+        # L^VF (inherit from ActorCritic)
+
+        # H entropy regularization
+        entropy = action_pd.entropy().mean()
+        ent_penalty = -self.actor_entropy_coef * entropy
+        #print(f'ent_penalty: {ent_penalty}')
+
+        policy_loss = clip_loss + ent_penalty
+        #print(f'PPO Actor policy loss: {policy_loss:g}')
+        return policy_loss
+
+
     def calc_val_loss(self, v_preds, v_targets):
         '''Calculate the critic's value loss'''
         assert v_preds.shape == v_targets.shape, f'{v_preds.shape} != {v_targets.shape}'
@@ -192,21 +229,34 @@ class A2C(nn.Module):
 
     def check_train(self):
         if self.to_train == 1:
+            # update old net
+            self.old_actor_model.load_state_dict(self.actor_model.state_dict()) 
+
             batch = self.sample()
             pdparams, v_preds = self.calc_pdparam_v(batch)
             advs, v_targets = self.calc_gae_advs_v_targets(batch, v_preds)
-            policy_loss = self.calc_policy_loss(batch, pdparams, advs)  # from actor
-            val_loss = self.calc_val_loss(v_preds, v_targets)  # from critic
 
-            loss = policy_loss + val_loss
+            batch['advs'], batch['v_targets'] = advs, v_targets
 
-            self.optim.zero_grad()
-            loss.backward()
-            self.optim.step()
+            for _ in range(self.training_epoch):
+                advs, v_targets = batch['advs'], batch['v_targets']
+                pdparams, v_preds = self.calc_pdparam_v(batch)
+                policy_loss = self.calc_policy_loss(batch, pdparams, advs)  # from actor
+                val_loss = self.calc_val_loss(v_preds, v_targets)  # from critic
 
-            # Reset- A2C is an on-policy algorithm so we cannot reuse data for next training.
+                # actor update
+                self.actor_optim.zero_grad()
+                policy_loss.backward()
+                self.actor_optim.step()
+
+                # critic update
+                self.critic_optim.zero_grad()
+                val_loss.backward()
+                self.critic_optim.step()
+
+            # reset
             self.to_train = 0
-            self.memory = {k: [] for k in self.data_keys}            
+            self.memory = {k: [] for k in self.data_keys}           
 
     def update(self, state, action, reward, next_state, done):
         self.update_memory(state, action, reward, next_state, done)
@@ -240,8 +290,8 @@ def run_rl(a2c, env, max_frame):
 
 def main():
     env = gym.make("CartPole-v0")
-    a2c = A2C(env)
-    run_rl(a2c, env, max_frame=1000)
+    ppo = PPO(env)
+    run_rl(ppo, env, max_frame=1000)
 
 if __name__ == '__main__':
     main()
