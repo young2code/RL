@@ -6,7 +6,7 @@ I've implemented the all RL algorithms introduced in this book - "Foundations Of
 
 ![alt text](https://images-na.ssl-images-amazon.com/images/I/41HraVa1zgS._SX218_BO1,204,203,200_QL40_FMwebp_.jpg)
 
-While the book is really awesome, its code examples are not easy to read as they are implemented as a part of this big RL framework called [SLM-Lab](https://slm-lab.gitbook.io/slm-lab/) except for the very first algorithm, REINFORCE. Therefore, I've decided to write simple and easy to understand code that shows each algorithm's core element clearly. Most of the code lines here are copied from https://github.com/kengz/SLM-Lab and modified so that each file contains a complete single algorithm without relying on any other files. I've also add some more comments on parts that I was confused. I hope it helps anyone studying the book or those RL algorithms. :)
+While the book is really awesome, its code examples are not easy to read as they are implemented as a part of this big RL framework called [SLM-Lab](https://slm-lab.gitbook.io/slm-lab/) except for the very first algorithm, REINFORCE. Therefore, I've decided to write simple and easy to understand code that shows each algorithm's core element clearly. Most of the code lines here are copied from https://github.com/kengz/SLM-Lab and modified so that each file contains a complete single algorithm without relying on any other files. I've also added some more comments on parts that I was confused. I hope it helps anyone studying the book or those RL algorithms. :)
 
 # Install
 Please install the below two packages to run.
