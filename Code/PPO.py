@@ -236,10 +236,7 @@ class PPO(nn.Module):
             pdparams, v_preds = self.calc_pdparam_v(batch)
             advs, v_targets = self.calc_gae_advs_v_targets(batch, v_preds)
 
-            batch['advs'], batch['v_targets'] = advs, v_targets
-
             for _ in range(self.training_epoch):
-                advs, v_targets = batch['advs'], batch['v_targets']
                 pdparams, v_preds = self.calc_pdparam_v(batch)
                 policy_loss = self.calc_policy_loss(batch, pdparams, advs)  # from actor
                 val_loss = self.calc_val_loss(v_preds, v_targets)  # from critic
